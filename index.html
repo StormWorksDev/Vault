@@ -2,11 +2,94 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>My Basic GitHub Pages Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Vault — Zero-Knowledge Encrypted Vault</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/vault-pwa/manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/vault-pwa/public/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/vault-pwa/public/icons/icon-192.png" />
+
+  <!-- Material You Base Theme Colors -->
+  <style>
+    :root {
+      /* Material You Tonal Palette - example */
+      --md-sys-color-primary: #6750a4;
+      --md-sys-color-on-primary: #ffffff;
+      --md-sys-color-primary-container: #eaddff;
+      --md-sys-color-on-primary-container: #21005d;
+
+      --md-sys-color-background: #fffbfe;
+      --md-sys-color-on-background: #1c1b1f;
+
+      --md-sys-color-surface: #fffbfe;
+      --md-sys-color-on-surface: #1c1b1f;
+
+      /* Elevation shadows & motion can be added in your CSS */
+    }
+
+    body {
+      margin: 0;
+      font-family: "Roboto", "Noto", sans-serif;
+      background-color: var(--md-sys-color-background);
+      color: var(--md-sys-color-on-background);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.5;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Skip link styles */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+      padding: 8px 16px;
+      z-index: 100;
+      transition: top 0.3s ease;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .skip-link:focus {
+      top: 0;
+    }
+  </style>
+
+  <!-- Strict Content Security Policy -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data:;
+    connect-src 'none';
+    font-src 'self';
+    base-uri 'self';
+    form-action 'self';
+    frame-ancestors 'none';
+  " />
+
 </head>
 <body>
-  <h1>Hello, GitHub Pages!</h1>
-  <p>This is a simple static site to test if GitHub Pages is working.</p>
+  <!-- Accessibility skip link -->
+  <a href="#root" class="skip-link">Skip to main content</a>
+
+  <!-- React app mount point -->
+  <div id="root" role="main" aria-label="Vault encrypted file vault app"></div>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/vault-pwa/service-worker.js')
+          .then(reg => console.log('Service Worker registered:', reg.scope))
+          .catch(err => console.warn('Service Worker registration failed:', err));
+      });
+    }
+  </script>
+
+  <!-- Main app bundle -->
+  <script type="module" src="/vault-pwa/src/main.tsx"></script>
 </body>
 </html>
