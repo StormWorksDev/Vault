@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pro Photo Editor</title>
+<style>
+:root{
+  --bg: #000;
+  --surface: #111;
+  --card: #1a1a1a;
+  --text: #fff;
+  --muted: #bdbdbd;
+  --radius: 12px;
+  --accent: #b3b3b3;
+}
+* { box-sizing: border-box; margin:0; padding:0; font-family:sans-serif; }
+body { background: var(--bg); color: var(--text); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+#top-bar { display:flex; justify-content:space-between; align-items:center; padding:10px 16px; background:var(--surface); border-bottom:1px solid #222; }
+#canvas-container { flex:1; display:flex; justify-content:center; align-items:center; position:relative; background:#000; }
+canvas { max-width:100%; max-height:100%; border-radius: var(--radius); }
+#controls { background:var(--card); padding:12px; display:flex; flex-direction:column; gap:8px; overflow-y:auto; max-height:300px; }
+.slider-container { display:flex; align-items:center; justify-content:space-between; }
+.slider-container input[type=range] { flex:1; margin:0 8px; }
+#preset-panel { display:flex; flex-wrap:wrap; gap:8px; padding:8px; background:var(--surface); overflow-x:auto; }
+.preset-thumb { width:72px; height:72px; border-radius: var(--radius); background:#222; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:10px; cursor:pointer; text-align:center; user-select:none; }
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <div>Pro Photo Editor</div>
+  <input type="file" id="file-input" accept="image/*">
+</div>
+
+<div id="canvas-container">
+  <canvas id="photo-canvas"></canvas>
+</div>
+
+<div id="controls">
+  <div class="slider-container"><label>Exposure</label><input type="range" id="exposure" min="-1" max="1" step="0.01" value="0"></div>
+  <div class="slider-container"><label>Contrast</label><input type="range" id="contrast" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Highlights</label><input type="range" id="highlights" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Shadows</label><input type="range" id="shadows" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Whites</label><input type="range" id="whites" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Blacks</label><input type="range" id="blacks" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Texture</label><input type="range" id="texture" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Clarity</label><input type="range" id="clarity" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Dehaze</label><input type="range" id="dehaze" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Vibrance</label><input type="range" id="vibrance" min="-100" max="100" step="1" value="0"></div>
+  <div class="slider-container"><label>Saturation</label><input type="range" id="saturation" min="-100" max="100" step="1" value="0"></div>
+</div>
+
+<div id="preset-panel"></div>
+
+<script>
+// WebGL initialization and basic shader setup
+const canvas = document.getElementById('photo-canvas');
+const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+let imgTexture = null;
+let image = null;
+
+function resizeCanvas() {
+  canvas.width = canvas.parentElement.clientWidth;
+  canvas.height = canvas.parentElement.clientHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Basic vertex shader
+const vertSrc = `
+attribute vec2 a_position;
+attribute vec2 a_texCoord;
+varying vec2 v_texCoord;
+void main() {
+  gl_Position = vec4(a_position, 0,1);
+  v_texCoord = a_texCoord;
+}`;
+
+// Basic fragment shader with exposure/contrast/saturation
+const fragSrc = `
+precision mediump float;
+uniform sampler2D u_image;
+uniform float u_exposure;
+uniform float u_contrast;
+uniform float u_saturation;
+varying vec2 v_texCoord;
+vec3 adjustContrast(vec3 color, float contrast) {
+  return ((color - 0.5) * contrast + 0.5);
+}
+vec3 adjustSaturation(vec3 color, float sat) {
+  float luma = dot(color, vec3(0.2126,0.7152,0.0722));
+  return mix(vec3(luma), color, sat);
+}
+void main() {
+  vec4 c = texture2D(u_image, v_texCoord);
+  vec3 col = c.rgb * pow(2.0,u_exposure);
+  col = adjustContrast(col, u_contrast);
+  col = adjustSaturation(col, u_saturation);
+  gl_FragColor = vec4(col, c.a);
+}`;
+
+// Shader compilation
+function compileShader(type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(shader));
+  return shader;
+}
+
+const vertShader = compileShader(gl.VERTEX_SHADER, vertSrc);
+const fragShader = compileShader(gl.FRAGMENT_SHADER, fragSrc);
+const program = gl.createProgram();
+gl.attachShader(program, vertShader);
+gl.attachShader(program, fragShader);
+gl.linkProgram(program);
+gl.useProgram(program);
+
+// Setup position & texCoord buffers
+const positionBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
+  -1,-1,  1,-1, -1,1,  -1,1, 1,-1, 1,1
+]), gl.STATIC_DRAW);
+const posLoc = gl.getAttribLocation(program,'a_position');
+gl.enableVertexAttribArray(posLoc);
+gl.vertexAttribPointer(posLoc,2,gl.FLOAT,false,0,0);
+
+const texCoordBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
+  0,1, 1,1, 0,0, 0,0, 1,1, 1,0
+]), gl.STATIC_DRAW);
+const texLoc = gl.getAttribLocation(program,'a_texCoord');
+gl.enableVertexAttribArray(texLoc);
+gl.vertexAttribPointer(texLoc,2,gl.FLOAT,false,0,0);
+
+// Uniforms
+const u_imageLoc = gl.getUniformLocation(program,'u_image');
+const u_exposureLoc = gl.getUniformLocation(program,'u_exposure');
+const u_contrastLoc = gl.getUniformLocation(program,'u_contrast');
+const u_saturationLoc = gl.getUniformLocation(program,'u_saturation');
+
+// Load image into texture
+function loadTexture(img) {
+  if(imgTexture) gl.deleteTexture(imgTexture);
+  imgTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,imgTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
+}
+
+// Slider logic
+const sliders = ['exposure','contrast','saturation'];
+const state = {exposure:0, contrast:1, saturation:1};
+sliders.forEach(id=>{
+  const el = document.getElementById(id);
+  el.addEventListener('input',()=>{ 
+    const val = parseFloat(el.value);
+    if(id==='contrast'||id==='saturation') state[id]=1+val/100;
+    else state[id]=val;
+    draw();
+  });
+});
+
+// Presets
+const presets = [
+  {name:'Pro Neutral', exposure:0, contrast:10, saturation:0},
+  {name:'Clean Snap', exposure:0.05, contrast:18, saturation:7},
+  {name:'Portra Warm', exposure:0.08, contrast:-6, saturation:-2},
+  {name:'Velvia Pop', exposure:0, contrast:20, saturation:18},
+  {name:'Portra Cooler', exposure:0.03, contrast:-8, saturation:-6},
+  {name:'Teal & Orange', exposure:0.02, contrast:22, saturation:0},
+  {name:'Moody Matte', exposure:-0.25, contrast:8, saturation:-12},
+  {name:'High-Key Clean', exposure:0.6, contrast:-6, saturation:-2},
+  {name:'Golden Hour', exposure:0.05, contrast:6, saturation:8},
+  {name:'Soft Film Glow', exposure:0.08, contrast:-4, saturation:0},
+  {name:'Classic B&W Film', exposure:0, contrast:24, saturation:-100},
+  {name:'Film Noir', exposure:-0.15, contrast:32, saturation:-100},
+  {name:'Pastel Dream', exposure:0.1, contrast:-14, saturation:-10},
+  {name:'Cross Processed', exposure:0, contrast:10, saturation:6},
+  {name:'Urban Desat', exposure:0.03, contrast:18, saturation:-18},
+  {name:'Forest Emerald', exposure:0.02, contrast:12, saturation:0},
+  {name:'Coastal Teal', exposure:0.02, contrast:14, saturation:0},
+  {name:'Neon Night', exposure:-0.2, contrast:18, saturation:12},
+  {name:'Bleach Bypass', exposure:0, contrast:28, saturation:-30},
+  {name:'Soft Pastel Film', exposure:0.08, contrast:-10, saturation:-8},
+  {name:'HDR Punch', exposure:0.05, contrast:28, saturation:18},
+  {name:'Retro Polaroid', exposure:0.04, contrast:-8, saturation:-10},
+  {name:'Cyanotype Cool', exposure:-0.05, contrast:8, saturation:-18},
+  {name:'Film Soft Contrast', exposure:0.02, contrast:6, saturation:0},
+  {name:'Portrait Pro Skin', exposure:0.03, contrast:6, saturation:2}
+];
+
+// Populate preset panel
+const presetPanel = document.getElementById('preset-panel');
+presets.forEach((p,i)=>{
+  const div = document.createElement('div');
+  div.className='preset-thumb';
+  div.innerText=p.name;
+  div.onclick=()=>{applyPreset(i)};
+  presetPanel.appendChild(div);
+});
+
+function applyPreset(i){
+  const p = presets[i];
+  state.exposure=p.exposure;
+  state.contrast=1+p.contrast/100;
+  state.saturation=1+p.saturation/100;
+  sliders.forEach(id=>{
+    const el = document.getElementById(id);
+    if(id==='contrast') el.value=p.contrast;
+    else if(id==='saturation') el.value=p.saturation;
+    else el.value=p.exposure;
+  });
+  draw();
+}
+
+// Draw
+function draw(){
+  if(!imgTexture) return;
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,imgTexture);
+  gl.uniform1i(u_imageLoc,0);
+  gl.uniform1f(u_exposureLoc,state.exposure);
+  gl.uniform1f(u_contrastLoc,state.contrast);
+  gl.uniform1f(u_saturationLoc,state.saturation);
+  gl.drawArrays(gl.TRIANGLES,0,6);
+}
+
+// File load
+const fileInput = document.getElementById('file-input');
+fileInput.addEventListener('change',(e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    image = new Image();
+    image.onload = function(){
+      loadTexture(image);
+      draw();
+    }
+    image.src = ev.target.result;
+  }
+  reader.readAsDataURL(file);
+});
+</script>
+</body>
+</html>
