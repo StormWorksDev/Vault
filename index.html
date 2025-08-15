@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pro Photo Editor - WebGL Edition</title>
+<style>
+:root{
+  --bg: #000;
+  --surface: #111;
+  --card: #1a1a1a;
+  --text: #fff;
+  --muted: #bdbdbd;
+  --radius: 12px;
+  --accent: #b3b3b3;
+  --control-bg: #222;
+  --focus-ring: #007bff;
+}
+* { box-sizing: border-box; margin:0; padding:0; font-family:sans-serif; }
+body { background: var(--bg); color: var(--text); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+#top-bar { display:flex; justify-content:space-between; align-items:center; padding:10px 16px; background:var(--surface); border-bottom:1px solid #222; }
+#canvas-container { flex:1; display:flex; justify-content:center; align-items:center; position:relative; background:#000; }
+canvas { max-width:100%; max-height:100%; border-radius: var(--radius); }
+#sidebar { width: 300px; background: var(--card); display: flex; flex-direction: column; }
+#controls { padding:16px; display:flex; flex-direction:column; gap:16px; overflow-y:auto; flex: 1;}
+.control-group { border: 1px solid #333; border-radius: var(--radius); padding: 12px; }
+.control-group summary { font-weight: bold; cursor: pointer; padding: 4px 0; }
+.slider-container { display:flex; align-items:center; justify-content:space-between; flex-wrap: wrap; margin-top: 8px; }
+.slider-container label { flex: 1; min-width: 60px; }
+.slider-container input[type=range] { flex:2; margin:0 8px; appearance: none; height: 4px; background: #555; border-radius: 2px; outline: none; transition: background .2s ease-in-out; }
+.slider-container input[type=range]::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+.slider-container .value { color: var(--muted); width: 40px; text-align: right; }
+#preset-panel { display:flex; flex-wrap:wrap; gap:8px; padding:16px; background:var(--surface); overflow-x:auto; border-top:1px solid #222; }
+.preset-thumb { width:100px; height:60px; border-radius: 8px; background:#222; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:11px; cursor:pointer; text-align:center; user-select:none; transition: all 0.2s ease; }
+.preset-thumb:hover { background: #333; transform: scale(1.05); }
+.preset-thumb.active { border: 2px solid var(--focus-ring); color: var(--text); }
+#file-input-label { cursor: pointer; background: var(--control-bg); padding: 8px 12px; border-radius: var(--radius); border: 1px solid #333; transition: all 0.2s ease; }
+#file-input-label:hover { background: #333; }
+#file-input { display: none; }
+</style>
+</head>
+<body>
+
+<div id="top-bar">
+  <div>Pro Photo Editor</div>
+  <label id="file-input-label" for="file-input">Load Image</label>
+  <input type="file" id="file-input" accept="image/*">
+</div>
+
+<div id="canvas-container">
+  <canvas id="photo-canvas"></canvas>
+</div>
+
+<div id="sidebar">
+  <div id="controls">
+    <div class="control-group">
+      <details open>
+        <summary>Light</summary>
+        <div class="slider-container"><label>Exposure</label><input type="range" id="exposure" min="-1" max="1" step="0.01" value="0"><span class="value">0.00</span></div>
+        <div class="slider-container"><label>Contrast</label><input type="range" id="contrast" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Highlights</label><input type="range" id="highlights" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Shadows</label><input type="range" id="shadows" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Whites</label><input type="range" id="whites" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Blacks</label><input type="range" id="blacks" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+      </details>
+    </div>
+    <div class="control-group">
+      <details>
+        <summary>Color</summary>
+        <div class="slider-container"><label>Vibrance</label><input type="range" id="vibrance" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Saturation</label><input type="range" id="saturation" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+      </details>
+    </div>
+    <div class="control-group">
+      <details>
+        <summary>Effects</summary>
+        <div class="slider-container"><label>Clarity</label><input type="range" id="clarity" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Dehaze</label><input type="range" id="dehaze" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Vignette</label><input type="range" id="vignette" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Grain</label><input type="range" id="grain" min="0" max="100" step="1" value="0"><span class="value">0</span></div>
+      </details>
+    </div>
+    <div class="control-group">
+      <details>
+        <summary>Split Toning</summary>
+        <div class="slider-container"><label>Highlights Hue</label><input type="range" id="splitHueH" min="0" max="360" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Highlights Sat</label><input type="range" id="splitSatH" min="0" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Shadows Hue</label><input type="range" id="splitHueS" min="0" max="360" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Shadows Sat</label><input type="range" id="splitSatS" min="0" max="100" step="1" value="0"><span class="value">0</span></div>
+        <div class="slider-container"><label>Balance</label><input type="range" id="splitBal" min="-100" max="100" step="1" value="0"><span class="value">0</span></div>
+      </details>
+    </div>
+  </div>
+  
+<div id="preset-panel"></div>
+</div>
+
+<script id="main-vert-shader" type="x-shader/x-vertex">
+  attribute vec2 a_position;
+  attribute vec2 a_texCoord;
+  varying vec2 v_texCoord;
+  void main() {
+    gl_Position = vec4(a_position, 0,1);
+    v_texCoord = a_texCoord;
+  }
+</script>
+
+<script id="exposure-frag-shader" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform sampler2D u_image;
+  uniform float u_exposure;
+  varying vec2 v_texCoord;
+  void main() {
+    vec4 c = texture2D(u_image, v_texCoord);
+    gl_FragColor = vec4(c.rgb * pow(2.0, u_exposure), c.a);
+  }
+</script>
+
+<script id="tone-frag-shader" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform sampler2D u_image;
+  uniform float u_contrast;
+  uniform float u_highlights;
+  uniform float u_shadows;
+  uniform float u_whites;
+  uniform float u_blacks;
+  varying vec2 v_texCoord;
+  
+  vec3 adjustHighlights(vec3 color, float amount) {
+    return mix(color, vec3(1.0), amount * (1.0 - color.r));
+  }
+  
+  vec3 adjustShadows(vec3 color, float amount) {
+    return mix(color, vec3(0.0), -amount * color.r);
+  }
+  
+  void main() {
+    vec4 c = texture2D(u_image, v_texCoord);
+    vec3 col = c.rgb;
+    
+    // Whites/Blacks
+    float w = u_whites/100.0;
+    float b = u_blacks/100.0;
+    col = col + w * (1.0 - col);
+    col = col + b * col;
+    
+    // Contrast
+    col = (col - 0.5) * (1.0 + u_contrast/100.0) + 0.5;
+    
+    // Highlights & Shadows
+    col = adjustHighlights(col, u_highlights/100.0);
+    col = adjustShadows(col, u_shadows/100.0);
+    
+    gl_FragColor = vec4(col, c.a);
+  }
+</script>
+
+<script id="color-frag-shader" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform sampler2D u_image;
+  uniform float u_vibrance;
+  uniform float u_saturation;
+  varying vec2 v_texCoord;
+  
+  vec3 adjustSaturation(vec3 color, float sat) {
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    return mix(vec3(luma), color, sat);
+  }
+  
+  void main() {
+    vec4 c = texture2D(u_image, v_texCoord);
+    vec3 col = c.rgb;
+
+    // Vibrance
+    float maxComponent = max(max(col.r, col.g), col.b);
+    float vibranceAmount = u_vibrance / 100.0;
+    float vibranceFactor = 1.0 + vibranceAmount * (1.0 - maxComponent);
+    col = adjustSaturation(col, vibranceFactor);
+
+    // Saturation
+    float satAmount = u_saturation / 100.0;
+    col = adjustSaturation(col, 1.0 + satAmount);
+
+    gl_FragColor = vec4(col, c.a);
+  }
+</script>
+
+<script id="effects-frag-shader" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform sampler2D u_image;
+  uniform vec2 u_resolution;
+  uniform float u_clarity;
+  uniform float u_dehaze;
+  uniform float u_vignette;
+  uniform float u_grain;
+  uniform float u_time;
+  varying vec2 v_texCoord;
+
+  // Simple procedural noise for grain
+  float rand(vec2 co){
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453) * 2.0 - 1.0;
+  }
+
+  void main() {
+    vec4 c = texture2D(u_image, v_texCoord);
+    vec3 col = c.rgb;
+
+    // Clarity (Local Contrast)
+    float clarityAmount = u_clarity/100.0;
+    if (clarityAmount != 0.0) {
+      vec3 blurCol = texture2D(u_image, v_texCoord + vec2(1.0, 1.0)/u_resolution).rgb;
+      vec3 diff = col - blurCol;
+      col = col + diff * clarityAmount;
+    }
+
+    // Dehaze
+    float haze = u_dehaze/100.0;
+    if (haze != 0.0) {
+      vec3 temp = col - (haze * 0.5 + 0.5);
+      col = temp / (1.0 - haze);
+    }
+
+    // Vignette
+    float vigAmount = -u_vignette / 100.0;
+    float dist = distance(v_texCoord, vec2(0.5));
+    float vignette = smoothstep(0.4, 0.8, dist * (2.0 - vigAmount));
+    col *= vec3(1.0 - vignette * vigAmount);
+
+    // Grain
+    float grainAmount = u_grain / 100.0;
+    if (grainAmount > 0.0) {
+      vec2 random = vec2(rand(v_texCoord * u_time), rand(v_texCoord * u_time + 10.0));
+      vec3 grain = vec3(random.x, random.y, (random.x + random.y) / 2.0) * grainAmount;
+      col += grain;
+    }
+
+    gl_FragColor = vec4(col, c.a);
+  }
+</script>
+
+<script id="split-tone-frag-shader" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform sampler2D u_image;
+  uniform float u_splitHueH;
+  uniform float u_splitSatH;
+  uniform float u_splitHueS;
+  uniform float u_splitSatS;
+  uniform float u_splitBal;
+  varying vec2 v_texCoord;
+
+  vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+  }
+
+  vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.w);
+    return c.z * mix(K.xxx, clamp(p - K.x, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    vec4 c = texture2D(u_image, v_texCoord);
+    vec3 col = c.rgb;
+    
+    // Convert to HSV for luminance check
+    vec3 hsv = rgb2hsv(col);
+    float luma = hsv.z;
+    
+    // Split Toning
+    float hHue = u_splitHueH / 360.0;
+    float hSat = u_splitSatH / 100.0;
+    float sHue = u_splitHueS / 360.0;
+    float sSat = u_splitSatS / 100.0;
+    float balance = (u_splitBal / 100.0 + 1.0) / 2.0;
+
+    vec3 shadowColor = hsv2rgb(vec3(sHue, sSat, 1.0));
+    vec3 highlightColor = hsv2rgb(vec3(hHue, hSat, 1.0));
+    
+    float weight = clamp((luma - 0.5) * 2.0, -1.0, 1.0);
+    
+    vec3 toned;
+    if (weight < 0.0) {
+      toned = mix(col, shadowColor, -weight);
+    } else {
+      toned = mix(col, highlightColor, weight);
+    }
+    col = mix(col, toned, balance);
+    
+    gl_FragColor = vec4(col, c.a);
+  }
+</script>
+
+<script>
+// Main JavaScript logic
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('photo-canvas');
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  
+  if (!gl) {
+    alert('WebGL not supported. Please use a modern browser.');
+    return;
+  }
+  
+  // State management
+  const state = {
+    exposure: 0,
+    contrast: 0,
+    highlights: 0,
+    shadows: 0,
+    whites: 0,
+    blacks: 0,
+    vibrance: 0,
+    saturation: 0,
+    clarity: 0,
+    dehaze: 0,
+    vignette: 0,
+    grain: 0,
+    splitHueH: 0,
+    splitSatH: 0,
+    splitHueS: 0,
+    splitSatS: 0,
+    splitBal: 0,
+  };
+  
+  let imgTexture = null;
+  let image = null;
+  
+  // Shaders and program management
+  const shaders = {
+    exposure: document.getElementById('exposure-frag-shader').textContent,
+    tone: document.getElementById('tone-frag-shader').textContent,
+    color: document.getElementById('color-frag-shader').textContent,
+    effects: document.getElementById('effects-frag-shader').textContent,
+    splitTone: document.getElementById('split-tone-frag-shader').textContent,
+  };
+  const vertSrc = document.getElementById('main-vert-shader').textContent;
+
+  const programs = {};
+  const framebuffers = {};
+  let currentFramebufferIndex = 0;
+  let textures = {};
+
+  // Utility functions
+  function compileShader(type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    }
+    return shader;
+  }
+  
+  function createProgram(vertSrc, fragSrc) {
+    const vertShader = compileShader(gl.VERTEX_SHADER, vertSrc);
+    const fragShader = compileShader(gl.FRAGMENT_SHADER, fragSrc);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertShader);
+    gl.attachShader(program, fragShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error('Program link error:', gl.getProgramInfoLog(program));
+    }
+    return program;
+  }
+  
+  function initPrograms() {
+    for (const key in shaders) {
+      programs[key] = createProgram(vertSrc, shaders[key]);
+    }
+  }
+
+  function initFramebuffers() {
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Two textures to ping-pong between
+    textures.ping = createTexture(width, height);
+    textures.pong = createTexture(width, height);
+    
+    framebuffers.ping = createFramebuffer(textures.ping);
+    framebuffers.pong = createFramebuffer(textures.pong);
+  }
+
+  function createTexture(width, height) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    return texture;
+  }
+
+  function createFramebuffer(texture) {
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    return fb;
+  }
+
+  // Buffers
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+  
+  const texCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,1, 1,1, 0,0, 0,0, 1,1, 1,0]), gl.STATIC_DRAW);
+
+  // Load image into texture
+  function loadImageTexture(img) {
+    if (imgTexture) gl.deleteTexture(imgTexture);
+    imgTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, imgTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    
+    // Re-initialize framebuffers with image size
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    initFramebuffers();
+  }
+
+  // The main render function
+  function render() {
+    if (!imgTexture) {
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      return;
+    }
+    
+    const activeShaders = [
+      'exposure', 'tone', 'color', 'splitTone', 'effects'
+    ];
+    
+    let sourceTexture = imgTexture;
+
+    // Shader Chain: Render each pass to a framebuffer
+    for (let i = 0; i < activeShaders.length; i++) {
+      const shaderKey = activeShaders[i];
+      const program = programs[shaderKey];
+      
+      gl.useProgram(program);
+      
+      const targetFramebuffer = (i % 2 === 0) ? framebuffers.ping : framebuffers.pong;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, targetFramebuffer);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+
+gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+      
+      // Set uniforms
+      gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
+      gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), canvas.width, canvas.height);
+      
+      // Pass state values
+      gl.uniform1f(gl.getUniformLocation(program, 'u_exposure'), state.exposure);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_contrast'), state.contrast);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_highlights'), state.highlights);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_shadows'), state.shadows);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_whites'), state.whites);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_blacks'), state.blacks);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_vibrance'), state.vibrance);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_saturation'), state.saturation);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_clarity'), state.clarity);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_dehaze'), state.dehaze);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_vignette'), state.vignette);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_grain'), state.grain);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_splitHueH'), state.splitHueH);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_splitSatH'), state.splitSatH);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_splitHueS'), state.splitHueS);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_splitSatS'), state.splitSatS);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_splitBal'), state.splitBal);
+      gl.uniform1f(gl.getUniformLocation(program, 'u_time'), performance.now() / 1000);
+      
+      // Setup attributes
+      const posLoc = gl.getAttribLocation(program, 'a_position');
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+      
+      const texLoc = gl.getAttribLocation(program, 'a_texCoord');
+      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+      gl.enableVertexAttribArray(texLoc);
+      gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
+      
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      sourceTexture = (i % 2 === 0) ? textures.ping : textures.pong;
+    }
+
+    // Final pass to canvas
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    
+    gl.useProgram(programs.effects); // Use any program for the final draw
+    
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+    gl.uniform1i(gl.getUniformLocation(programs.effects, 'u_image'), 0);
+    
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // UI logic
+  const controls = document.getElementById('controls');
+  controls.addEventListener('input', (e) => {
+    const target = e.target;
+    if (target.type === 'range') {
+      const id = target.id;
+      const value = parseFloat(target.value);
+      state[id] = value;
+      target.parentElement.querySelector('.value').innerText = value.toFixed(id.includes('exposure') ? 2 : 0);
+      requestAnimationFrame(render);
+    }
+  });
+
+  // Presets
+  const presets = [
+    { name: 'Default', values: {} },
+    { name: 'Clean Snap', values: { exposure: 0.05, contrast: 18, saturation: 7, highlights: -10, clarity: 15, grain: 0 } },
+    { name: 'Portra Warm', values: { exposure: 0.08, contrast: -6, saturation: -2, highlights: 20, shadows: 15, splitHueH: 30, splitSatH: 15, splitHueS: 210, splitSatS: 5, splitBal: 20 } },
+    { name: 'Velvia Pop', values: { exposure: 0, contrast: 20, saturation: 18, vibrance: 10, highlights: -15, blacks: -10, splitHueH: 45, splitSatH: 10, splitHueS: 240, splitSatS: 10, splitBal: 0 } },
+    { name: 'Moody Matte', values: { exposure: -0.25, contrast: 8, saturation: -12, blacks: 20, shadows: -10, clarity: 10, vignette: 20 } },
+    { name: 'Golden Hour', values: { exposure: 0.05, contrast: 6, saturation: 8, highlights: 15, shadows: 10, splitHueH: 40, splitSatH: 25, splitHueS: 200, splitSatS: 10, splitBal: -40 } },
+    { name: 'Classic B&W', values: { exposure: 0.1, contrast: 24, saturation: -100, highlights: -20, shadows: 20, blacks: -15, whites: 10, grain: 20 } },
+    { name: 'Film Noir', values: { exposure: -0.15, contrast: 32, saturation: -100, blacks: -30, whites: -10, vignette: 40, grain: 30 } },
+    { name: 'Retro Polaroid', values: { exposure: 0.04, contrast: -8, saturation: -10, highlights: -25, shadows: -10, clarity: -10, blacks: 10, splitHueH: 30, splitSatH: 5, splitHueS: 200, splitSatS: 5, splitBal: 0, vignette: 20 } },
+  ];
+
+  const presetPanel = document.getElementById('preset-panel');
+  presets.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'preset-thumb';
+    div.innerText = p.name;
+    div.onclick = () => applyPreset(i);
+    presetPanel.appendChild(div);
+  });
+
+  function applyPreset(index) {
+    const p = presets[index].values;
+    // Reset all values first
+    for(const key in state) {
+      if (key in p) continue;
+      state[key] = document.getElementById(key).min === '-100' ? 0 : 0;
+      if (key === 'exposure') state[key] = 0;
+    }
+    // Apply preset values
+    for(const key in p) {
+      state[key] = p[key];
+    }
+    updateUI();
+    requestAnimationFrame(render);
+    
+    // UI feedback
+    document.querySelectorAll('.preset-thumb').forEach(el => el.classList.remove('active'));
+    document.querySelector(`.preset-thumb:nth-child(${index+1})`).classList.add('active');
+  }
+
+  function updateUI() {
+    for(const key in state) {
+      const el = document.getElementById(key);
+      if (el) {
+        el.value = state[key];
+        el.parentElement.querySelector('.value').innerText = state[key].toFixed(key.includes('exposure') ? 2 : 0);
+      }
+    }
+  }
+
+  // File load
+  const fileInput = document.getElementById('file-input');
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      image = new Image();
+      image.onload = function() {
+        loadImageTexture(image);
+        requestAnimationFrame(render);
+        applyPreset(0); // Apply default preset on image load
+      }
+      image.src = ev.target.result;
+    }
+    reader.readAsDataURL(file);
+  });
+
+  // Initial setup
+  initPrograms();
+  applyPreset(0);
+  requestAnimationFrame(render);
+});
+</script>
+</body>
+</html>
